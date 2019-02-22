@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Unit Conversions</title>
+	<style type="text/css">
+		code, pre {
+			background-color: #D3D3D3;
+		}
+	</style>
+</head>
+<body>
+<h1>Unit Conversions</h1>
+<i>By Ankush Raina, <a href="mailto:ankushraina.com@gmail.com">ankushraina.com@gmail.com</a></i>
+<h2>A Calories Intake App</h2>
+<p>
+	It all started out with a quest to figure out how many calories I consumed over a period of time.
+	In order to do so I needed to know what I ate, how much I ate and how many calories does it have per unit.
+	Calories information also known as food label is usually written on food's packaging.
+	If this is missing, a simple internet search will reveal it.
+</p>
+<p>
+	While I was building this application I encountered many interesting challenges.
+	This post talks about one specific problem that naturally arises when converting one unit to another.
+</p>
+
+<h2>Features</h2>
+<p>
+	The app allowed me to store my own custom units.
+	This helped in ease of entering information to app.
+	For example my cup was 150ml. I could say I drank 1 cup of coffee instead of saying 150ml of coffee every time.
+</p>
+<p>
+	The app represented food label in its original units.
+	This helped to validate food label in case information was entered incorrectly.
+	Food labels can have different units and this depends on its serving size or country of origin.
+	So the app ended up in various units.
+</p>
+<p>
+	To get calories consumed, the app had to compute a <i>conversion factor</i>.
+	This factor when multipled to consumed quantity yielded calories.
+	The app may not have information necessary to obtain this.
+	In such cases it asked for a basic conversion rule which would help it to compute the factor.
+	The app persisted this rule to avoid asking it again in future.
+</p>
+
+<h2>Conversion Factor Storage</h2>
+<p>
+	Let's say there are n units.
+	Then there are <code><sup>n</sup>C<sub>2</sub> = n&times;(n-1)&divide;2 = O(n<sup>2</sup>)</code> conversion factors.
+	This acts as upper bound of storage.
+	For example with 3 units say a, b, c, one can have 6 conversion factors.
+	The conversion factor from unit a to unit b is inverse of conversion factor from unit b to unit a.
+	Let <code>f<sub>ab</sub></code> denotes conversion factor from unit a to unit b.
+	Then <code>f<sub>ab</sub> = 1 &divide; f<sub>ba</sub></code>.
+	This fact allowed app to cut down its storage by half.
+</p>
+<p>
+	Let's say we have factor from a to b and b to c.
+	We can find out conversion factor from a to c by multiplying these two factors.
+	That is <code>f<sub>ac</sub> = f<sub>ab</sub> &times; f<sub>bc</sub></code>.
+	For n units one needs at maximum of n - 1 conversion factors.
+	This is an important idea.
+	This fact allowed app to cut down its storage from quadratic to linear size.
+	This is also the lower bound on storage.
+</p>
+
+<h2>Computing Conversion Factor</h2>
+<p>
+	Consider this example
+	<ul>
+		<li>1 kilogram is 1000 gram</li>
+		<li>1 pound is 453.6 gram</li>
+		<li>1 gallon is 128 fluid ounce</li>
+		<li>1 fluid ounce is 2 tablespoon</li>
+	</ul>
+	The ask is to find
+	<ul>
+		<li>1 kilogram is x pounds</li>
+		<li>1 gram is y tablespoon</li>
+	</ul>
+</p>
+<figure>
+	<img src="images/conversions.svg"/>
+	<figcaption>Conversion puzzle, find x and y</figcaption>
+</figure>
+
+<p>
+	To solve for x, convert kilograms to grams, 
+	and then multiply it with inverse of pound to gram.
+</p>
+<p>
+	To solve for y, note there are two types of units.
+	Let's call them as weight units and volume units.
+	Weight units consists of kilogram, pound and gram.
+	Volume units consists of gallon, fluid ounce and tablespoon.
+	There is no conversion factor which can convert weight units to volume units.
+	This conversion becomes possible if food density information is available.
+	But then different food have different density, so no universal rule exists.
+	Therefore y can not be solved.
+</p>
+
+<p>
+	Let's analyze above method of finding x and y.
+	I can solve x because a <i>path</i> exists between <i>source</i> unit kilogram and <i>target</i> unit pound.
+	I can not solve y because no such path exists between gram and tablespoon.
+	Therefore to solve this problem in general, all I have to do is to find a path between source and target.
+	Once path is known, the answer is simply the product of all the conversion factors in that path.
+</p>
+
+<h2>Finding The Path</h2>
+<p>
+	Start with source unit and put it in a <i>list</i> of units to explore.
+	At this point I have only one unit in this list.
+	Take out one unit from this list.
+	If this unit is target unit, I have found the path and I am done.
+	Otherwise mark the fact that I'm going to explore this unit.
+	Exploration consists of finding all the units that have a known conversion factor with this unit and are not marked.
+	Add these new unmarked units to the list.
+	Repeat the process of taking out units from the list untill we have found the target unit or the list is empty.
+	If list is empty and target is not found, then no such path exists.
+</p>
+<p>
+	For those who know <i>graph theory</i> this is a <i>graph traversal algorithm</i>.
+	If list is <i>queue</i>, it is called <i>breadth first search</i>.
+	If list is <i>stack</i>, it is called <i>depth first search</i>.
+</p>
+
+<h2>Code</h2>
+<p>
+This is a standalone ruby code, implementing above idea.
+<pre>
+# given input
+facts = [
+  {from: 'kilogram', to: 'gram', factor: 1000},
+  {from: 'pound', to: 'gram', factor: 453.6},
+  {from: 'gallon', to: 'fluid ounce', factor: 128},
+  {from: 'fluid ounce', to: 'tablespoon', factor: 2}
+]
+
+def get_conversion_factor(facts, q)
+  # Build adjacency list connecting units with each other using facts
+  adj_list = Hash.new {|h,k| h[k] = []} # empty array as default
+  facts.each do |r|
+    adj_list[r[:from]] << {to: r[:to],   factor: r[:factor]}
+    adj_list[r[:to]]   << {to: r[:from], factor: 1.0/r[:factor]}
+  end
+
+  # Represents factor to current unit from source.
+  # Also acts as way to mark a unit reachable from source.
+  factor = {} 
+  factor[q[:from]] = 1 # from source to source factor is 1
+  list = [q[:from]]
+
+  # The main search loop using list
+  while v = list.shift and v != q[:to] # v is nil for empty list
+    adj_list[v].each do |e|
+      # If already explored skip it
+      unless factor[e[:to]]
+        factor[e[:to]] = factor[v]*e[:factor]
+        list << e[:to] # add to list to explore
+      end
+    end
+  end
+  return factor[q[:to]] # nil in case no factor found
+end
+
+puts get_conversion_factor facts, {from: 'kilogram', to: 'pound'}
+# 2.204585537918871
+puts get_conversion_factor facts, {from: 'gram', to: 'tablespoon'}
+# nil
+</pre>
+
+<h2>Feedback</h2>
+<p>
+	Got feedback, questions or requests? Email me at <a href="mailto:ankushraina.com@gmail.com?subject=Unit Conversions">ankushraina.com@gmail.com</a>.
+</p>
+<footer>Copyright &copy; 2019 By Ankush Raina. All Rights Reserved.</footer>
+</body>
+</html>
